@@ -2,6 +2,9 @@ package com.angel.paperlite.ui
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,27 +14,35 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -43,6 +54,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,6 +73,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.DateFormat
+import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,12 +88,14 @@ fun DetailScreen(vm: AppViewModel, docId: Long, onBack: () -> Unit) {
     var renaming by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
-    var pdfMenu by remember { mutableStateOf(false) }
-    var imgMenu by remember { mutableStateOf(false) }
+    var exportMenu by remember { mutableStateOf(false) }
+    var moreMenu by remember { mutableStateOf(false) }
+    var selectedName by remember { mutableStateOf<String?>(null) }
 
     // Si el documento se borra, volver atrás.
     val current = doc
     val title = current?.title ?: ""
+    val selectedIndex = pages.indexOfFirst { it.name == selectedName }
 
     fun withPdf(action: (File) -> Unit) {
         if (pages.isEmpty()) return
@@ -97,68 +115,112 @@ fun DetailScreen(vm: AppViewModel, docId: Long, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    Column {
+                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLarge)
+                        if (current != null) {
+                            Text(
+                                "${pages.size} páginas · " +
+                                    DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(current.createdAt)),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Atrás") }
                 },
                 actions = {
-                    IconButton(onClick = { renaming = true }) { Icon(Icons.Filled.Edit, "Renombrar") }
-                    IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Filled.Delete, "Eliminar documento") }
+                    Box {
+                        IconButton(onClick = { moreMenu = true }) { Icon(Icons.Filled.MoreVert, "Más opciones") }
+                        DropdownMenu(moreMenu, { moreMenu = false }) {
+                            DropdownMenuItem(text = { Text("Renombrar") }, onClick = {
+                                moreMenu = false
+                                renaming = true
+                            })
+                            DropdownMenuItem(text = { Text("Eliminar documento") }, onClick = {
+                                moreMenu = false
+                                confirmDelete = true
+                            })
+                        }
+                    }
                 },
             )
         },
         bottomBar = {
-            Row(
-                Modifier.fillMaxWidth().padding(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Box(Modifier.weight(1f)) {
-                    Button({ pdfMenu = true }, Modifier.fillMaxWidth(), enabled = !working) {
-                        Text("PDF")
-                    }
-                    DropdownMenu(pdfMenu, { pdfMenu = false }) {
-                        DropdownMenuItem(text = { Text("Ver") }, onClick = {
-                            pdfMenu = false
-                            withPdf { pdf ->
-                                context.startActivity(
-                                    Intent(context, PdfViewerActivity::class.java)
-                                        .setData(Sharer.uriFor(context, pdf))
-                                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
-                                )
+            Surface(tonalElevation = 3.dp) {
+                Column {
+                    if (selectedIndex >= 0) {
+                        val file = pages[selectedIndex]
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceAround,
+                        ) {
+                            PageAction(Icons.Filled.Refresh, "Rotar", true) { vm.rotatePage(docId, file) }
+                            PageAction(Icons.AutoMirrored.Filled.ArrowBack, "Atrás", selectedIndex > 0) {
+                                vm.movePage(docId, selectedIndex, selectedIndex - 1)
                             }
-                        })
-                        DropdownMenuItem(text = { Text("Compartir") }, onClick = {
-                            pdfMenu = false
-                            withPdf { Sharer.sharePdf(context, it) }
-                        })
-                        DropdownMenuItem(text = { Text("Guardar en Descargas") }, onClick = {
-                            pdfMenu = false
-                            withPdf {
-                                Sharer.savePdfToDownloads(context, it)
-                                Toast.makeText(context, "Guardado en Descargas", Toast.LENGTH_SHORT).show()
+                            PageAction(Icons.AutoMirrored.Filled.ArrowForward, "Adelante", selectedIndex < pages.lastIndex) {
+                                vm.movePage(docId, selectedIndex, selectedIndex + 1)
                             }
-                        })
+                            PageAction(Icons.Filled.Delete, "Borrar", true, MaterialTheme.colorScheme.error) {
+                                selectedName = null
+                                vm.deletePage(docId, file)
+                            }
+                        }
+                        HorizontalDivider()
                     }
-                }
-                Box(Modifier.weight(1f)) {
-                    Button({ imgMenu = true }, Modifier.fillMaxWidth(), enabled = pages.isNotEmpty()) {
-                        Text("Imágenes")
+                    Row(
+                        Modifier.fillMaxWidth().padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.weight(1f)) {
+                            Button(
+                                { exportMenu = true },
+                                Modifier.fillMaxWidth().size(width = 0.dp, height = 48.dp),
+                                enabled = pages.isNotEmpty() && !working,
+                            ) { Text("Exportar") }
+                            DropdownMenu(exportMenu, { exportMenu = false }) {
+                                DropdownMenuItem(text = { Text("Ver PDF") }, onClick = {
+                                    exportMenu = false
+                                    withPdf { pdf ->
+                                        context.startActivity(
+                                            Intent(context, PdfViewerActivity::class.java)
+                                                .setData(Sharer.uriFor(context, pdf))
+                                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
+                                        )
+                                    }
+                                })
+                                DropdownMenuItem(text = { Text("Guardar PDF en Descargas") }, onClick = {
+                                    exportMenu = false
+                                    withPdf {
+                                        Sharer.savePdfToDownloads(context, it)
+                                        Toast.makeText(context, "Guardado en Descargas", Toast.LENGTH_SHORT).show()
+                                    }
+                                })
+                                HorizontalDivider()
+                                DropdownMenuItem(text = { Text("Compartir imágenes") }, onClick = {
+                                    exportMenu = false
+                                    Sharer.shareImages(context, pages)
+                                })
+                                DropdownMenuItem(text = { Text("Guardar imágenes en galería") }, onClick = {
+                                    exportMenu = false
+                                    Sharer.saveImagesToGallery(context, PdfExporter.safeName(title), pages)
+                                    Toast.makeText(context, "Guardadas en Imágenes/PaperLite", Toast.LENGTH_SHORT).show()
+                                })
+                            }
+                        }
+                        OutlinedIconButton(
+                            onClick = { withPdf { Sharer.sharePdf(context, it) } },
+                            enabled = pages.isNotEmpty() && !working,
+                            modifier = Modifier.size(48.dp),
+                        ) { Icon(Icons.Filled.Share, "Compartir PDF") }
+                        FilledTonalIconButton(onClick = scan, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Filled.Add, "Añadir página")
+                        }
                     }
-                    DropdownMenu(imgMenu, { imgMenu = false }) {
-                        DropdownMenuItem(text = { Text("Compartir") }, onClick = {
-                            imgMenu = false
-                            Sharer.shareImages(context, pages)
-                        })
-                        DropdownMenuItem(text = { Text("Guardar en galería") }, onClick = {
-                            imgMenu = false
-                            Sharer.saveImagesToGallery(context, PdfExporter.safeName(title), pages)
-                            Toast.makeText(context, "Guardadas en Imágenes/PaperLite", Toast.LENGTH_SHORT).show()
-                        })
-                    }
-                }
-                Button(onClick = scan, Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Add, null)
-                    Text(" Página")
                 }
             }
         },
@@ -166,19 +228,16 @@ fun DetailScreen(vm: AppViewModel, docId: Long, onBack: () -> Unit) {
         Box(Modifier.fillMaxSize().padding(padding)) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
-                contentPadding = PaddingValues(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 itemsIndexed(pages, key = { _, f -> f.name }) { index, file ->
                     PageCard(
                         file = file,
                         index = index,
-                        last = index == pages.lastIndex,
-                        onRotate = { vm.rotatePage(docId, file) },
-                        onLeft = { vm.movePage(docId, index, index - 1) },
-                        onRight = { vm.movePage(docId, index, index + 1) },
-                        onDelete = { vm.deletePage(docId, file) },
+                        selected = file.name == selectedName,
+                        onClick = { selectedName = if (file.name == selectedName) null else file.name },
                     )
                 }
             }
@@ -212,37 +271,60 @@ fun DetailScreen(vm: AppViewModel, docId: Long, onBack: () -> Unit) {
 }
 
 @Composable
-private fun PageCard(
-    file: File,
-    index: Int,
-    last: Boolean,
-    onRotate: () -> Unit,
-    onLeft: () -> Unit,
-    onRight: () -> Unit,
-    onDelete: () -> Unit,
+private fun PageAction(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    onClick: () -> Unit,
 ) {
-    Card {
-        Column {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(file)
-                    .memoryCacheKey("${file.path}:${file.lastModified()}")
-                    .build(),
-                contentDescription = "Página ${index + 1}",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().aspectRatio(0.75f),
-            )
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onLeft, enabled = index > 0) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Mover atrás") }
-                IconButton(onRotate) { Icon(Icons.Filled.Refresh, "Rotar") }
-                IconButton(onRight, enabled = !last) { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Mover adelante") }
-                IconButton(onDelete) { Icon(Icons.Filled.Delete, "Eliminar página") }
-            }
-            Text(
-                "${index + 1}",
-                Modifier.align(Alignment.CenterHorizontally).padding(bottom = 6.dp),
-                style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
-            )
-        }
+    val color = if (enabled) tint else tint.copy(alpha = 0.38f)
+    Column(
+        Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(icon, null, tint = color)
+        Text(label, color = color, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun PageCard(file: File, index: Int, selected: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    val ring = if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, shape) else Modifier
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .aspectRatio(0.75f)
+            .clip(shape)
+            .background(Color.White)
+            .then(ring)
+            .clickable(onClick = onClick),
+    ) {
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(file)
+                .memoryCacheKey("${file.path}:${file.lastModified()}")
+                .build(),
+            contentDescription = "Página ${index + 1}",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Text(
+            "${index + 1}",
+            Modifier
+                .align(Alignment.TopStart)
+                .padding(8.dp)
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(if (selected) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.65f))
+                .padding(top = 3.dp),
+            color = if (selected) MaterialTheme.colorScheme.onPrimary else Color.White,
+            style = MaterialTheme.typography.labelMedium,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
     }
 }
